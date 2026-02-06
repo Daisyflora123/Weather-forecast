@@ -3,262 +3,337 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkyCast - Immersive Weather</title>
+    <title>WeatherPro Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
-            --bg-color: #1a202c;
-            --accent-color: #3182ce;
+            --bg-primary: #0f172a;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text-main: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --accent: #eab308;
         }
 
-        body {
-            margin: 0;
-            padding: 0;
+        body { 
+            background: var(--bg-primary); 
+            color: var(--text-main); 
+            min-height: 100vh; 
+            font-family: 'Inter', sans-serif; 
+            transition: background 1s ease, color 0.5s ease;
+            position: relative;
             overflow-x: hidden;
-            font-family: 'Inter', sans-serif;
-            transition: background 1s ease;
-            min-height: 100vh;
         }
 
-        .weather-canvas {
+        /* Weather Animation Overlays */
+        #weather-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: -1;
             pointer-events: none;
+            z-index: -1;
         }
 
-        .glass-card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 24px;
+        .glass { 
+            background: var(--card-bg); 
+            backdrop-filter: blur(12px); 
+            border: 1px solid rgba(255,255,255,0.1); 
+            border-radius: 1.5rem; 
+            transition: background 0.5s ease, border 0.5s ease;
         }
 
-        /* Animation Styles */
-        .drop {
-            background: rgba(255, 255, 255, 0.4);
+        .hide-scroll::-webkit-scrollbar { display: none; }
+
+        /* Weather Themes */
+        .theme-clear { --bg-primary: linear-gradient(to bottom, #0ea5e9, #38bdf8); --card-bg: rgba(255, 255, 255, 0.2); --text-main: #0c4a6e; --text-muted: rgba(12, 74, 110, 0.6); --accent: #f59e0b; }
+        .theme-clouds { --bg-primary: linear-gradient(to bottom, #64748b, #94a3b8); --card-bg: rgba(255, 255, 255, 0.15); --text-main: #f8fafc; --text-muted: rgba(248, 250, 252, 0.6); }
+        .theme-rain { --bg-primary: linear-gradient(to bottom, #1e293b, #334155); --card-bg: rgba(255, 255, 255, 0.1); }
+        .theme-snow { --bg-primary: linear-gradient(to bottom, #f1f5f9, #cbd5e1); --text-main: #1e293b; --text-muted: #475569; --card-bg: rgba(255, 255, 255, 0.4); }
+        .theme-thunder { --bg-primary: linear-gradient(to bottom, #020617, #1e1b4b); --card-bg: rgba(255, 255, 255, 0.05); }
+
+        /* Rain Animation */
+        .rain-drop {
+            position: absolute;
+            background: rgba(255,255,255,0.4);
             width: 2px;
             height: 15px;
-            position: absolute;
-            bottom: 200px;
+            top: -20px;
             animation: fall linear infinite;
         }
+        @keyframes fall { to { transform: translateY(100vh); } }
 
-        .snowflake {
-            color: #fff;
-            position: absolute;
-            top: -10px;
-            animation: fall linear infinite;
+        /* Thunder Flash */
+        .flash {
+            animation: flash-anim 5s infinite;
         }
-
-        @keyframes fall {
-            to { transform: translateY(105vh); }
+        @keyframes flash-anim {
+            0%, 90%, 100% { opacity: 0; }
+            92% { opacity: 0.3; background: white; }
+            94% { opacity: 0; }
+            96% { opacity: 0.2; background: white; }
         }
-
-        .sun-glow {
-            position: absolute;
-            top: -100px;
-            right: -100px;
-            width: 400px;
-            height: 400px;
-            background: radial-gradient(circle, rgba(255, 223, 0, 0.4) 0%, rgba(255, 223, 0, 0) 70%);
-            border-radius: 50%;
-            filter: blur(40px);
-            display: none;
-        }
-
-        /* Alert Colors */
-        .alert-safe { border-left: 6px solid #10b981; background: rgba(16, 185, 129, 0.1); }
-        .alert-caution { border-left: 6px solid #f59e0b; background: rgba(245, 158, 11, 0.1); }
-        .alert-warning { border-left: 6px solid #ef4444; background: rgba(239, 68, 68, 0.1); }
     </style>
 </head>
-<body class="bg-slate-900 text-white flex items-center justify-center p-4">
+<body class="p-4 md:p-8">
+    <div id="weather-overlay"></div>
 
-    <!-- Dynamic Weather Background Elements -->
-    <div id="rain-container" class="weather-canvas"></div>
-    <div id="snow-container" class="weather-canvas"></div>
-    <div id="sun-element" class="sun-glow"></div>
-
-    <div class="max-w-4xl w-full">
-        <!-- Search Header -->
-        <div class="flex flex-col md:flex-row gap-4 mb-8">
-            <div class="relative flex-grow">
-                <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                <input type="text" id="cityInput" placeholder="Enter city name..." 
-                    class="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-lg">
-            </div>
-            <button onclick="fetchWeather()" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold transition-all shadow-lg shadow-blue-900/20">
-                Get Forecast
-            </button>
-        </div>
-
-        <div id="weatherContent" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Main Info Card -->
-            <div class="md:col-span-2 glass-card p-8 relative overflow-hidden">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h1 id="cityName" class="text-5xl font-black tracking-tight mb-2">London</h1>
-                        <p id="weatherDesc" class="text-xl text-gray-300 capitalize">Scattered Clouds</p>
-                    </div>
-                    <div class="text-right">
-                        <span id="mainTemp" class="text-7xl font-light">22°</span>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-4 mt-12 border-t border-white/10 pt-8">
-                    <div class="text-center">
-                        <p class="text-gray-400 text-xs uppercase mb-1">Humidity</p>
-                        <p id="humidityVal" class="text-xl font-bold">65%</p>
-                    </div>
-                    <div class="text-center border-x border-white/10">
-                        <p class="text-gray-400 text-xs uppercase mb-1">Visibility</p>
-                        <p id="visibilityVal" class="text-xl font-bold">10km</p>
-                    </div>
-                    <div class="text-center">
-                        <p class="text-gray-400 text-xs uppercase mb-1">Wind Speed</p>
-                        <p id="windVal" class="text-xl font-bold">4.2 m/s</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Suggestions Sidebar -->
-            <div class="flex flex-col gap-6">
-                <!-- Status Alert Box -->
-                <div id="statusAlert" class="alert-safe p-5 rounded-2xl flex items-center gap-4 transition-all">
-                    <i id="statusIcon" class="fas fa-check-circle text-2xl"></i>
-                    <div>
-                        <p class="text-xs uppercase font-bold text-gray-300">Safety Status</p>
-                        <p id="statusText" class="text-sm font-semibold">Pleasant Conditions</p>
-                    </div>
-                </div>
-
-                <!-- Clothing Suggestion -->
-                <div class="glass-card p-6">
-                    <h3 class="text-sm font-bold uppercase text-gray-400 mb-4 flex items-center gap-2">
-                        <i class="fas fa-tshirt"></i> What to Wear
-                    </h3>
-                    <p id="clothingText" class="text-lg leading-relaxed">Comfortable casual wear 👖</p>
-                </div>
-
-                <!-- Advice Card -->
-                <div class="glass-card p-6">
-                    <h3 class="text-sm font-bold uppercase text-gray-400 mb-4 flex items-center gap-2">
-                        <i class="fas fa-lightbulb"></i> Daily Tip
-                    </h3>
-                    <p id="recommendationText" class="text-sm italic text-blue-100">"Great weather for outdoor activities!"</p>
-                </div>
+    <div class="max-w-6xl mx-auto">
+        <!-- Header & Search -->
+        <div class="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
+            <h1 class="text-3xl font-black tracking-tight" style="color: var(--text-main)"><span class="text-yellow-500">Weather</span>Pro</h1>
+            <div class="relative w-full md:w-96">
+                <input type="text" id="citySearch" placeholder="Search city..." 
+                    class="w-full p-4 pl-12 bg-white/10 rounded-2xl border border-white/10 focus:ring-2 focus:ring-yellow-500 outline-none" style="color: var(--text-main)">
+                <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 opacity-40"></i>
             </div>
         </div>
 
-        <!-- Initial Placeholder -->
-        <div id="placeholder" class="text-center py-20 opacity-50">
-            <i class="fas fa-cloud-sun text-8xl mb-6"></i>
-            <h2 class="text-2xl">Enter a city to see the magic</h2>
+        <div id="loader" class="text-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto"></div>
+        </div>
+
+        <div id="dashboard" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left: Hero Status -->
+            <div class="lg:col-span-8 space-y-6">
+                <div class="glass p-8 relative overflow-hidden">
+                    <div class="relative z-10 flex flex-col md:flex-row justify-between">
+                        <div>
+                            <h2 id="cityName" class="text-4xl font-bold mb-1">Mumbai</h2>
+                            <p id="currDate" style="color: var(--text-muted)" class="mb-6">Today</p>
+                            <div class="flex items-center gap-4">
+                                <span id="mainTemp" class="text-8xl font-light">--°</span>
+                                <div class="text-lg">
+                                    <p id="mainDesc" class="capitalize font-bold" style="color: var(--accent)">--</p>
+                                    <p style="color: var(--text-muted)">Feels like <span id="feelsLike">--</span>°</p>
+                                </div>
+                            </div>
+                        </div>
+                        <img id="mainIcon" src="" class="w-40 h-40 drop-shadow-2xl" alt="">
+                    </div>
+                </div>
+
+                <!-- Hourly Forecast -->
+                <div>
+                    <h3 class="text-xl font-bold mb-4">Hourly Forecast</h3>
+                    <div id="hourlyList" class="flex gap-4 overflow-x-auto pb-4 hide-scroll"></div>
+                </div>
+
+                <!-- 5 Day Forecast -->
+                <div class="glass p-6">
+                    <h3 class="text-xl font-bold mb-4">5-Day Outlook</h3>
+                    <div id="dailyList" class="space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- Right: Secondary Metrics -->
+            <div class="lg:col-span-4 space-y-6">
+                
+                <!-- Air Quality Card -->
+                <div id="aqiCard" class="glass p-6 border-l-4 border-green-500">
+                    <p class="text-xs font-bold uppercase mb-2" style="color: var(--text-muted)">Air Quality Index</p>
+                    <div class="flex justify-between items-end">
+                        <h4 id="aqiLabel" class="text-2xl font-bold">Good</h4>
+                        <span id="aqiVal" class="text-4xl opacity-20">1</span>
+                    </div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="glass p-6 border border-blue-500/20 bg-blue-500/5">
+                    <h3 class="text-sm font-black uppercase text-blue-400 mb-4 flex items-center gap-2">
+                        <i class="fas fa-lightbulb text-yellow-500"></i> Smart Recommendations
+                    </h3>
+                    <div id="recommendations" class="space-y-4">
+                        <div class="flex gap-3">
+                            <i class="fas fa-tshirt opacity-40 mt-1"></i>
+                            <div>
+                                <p class="text-xs uppercase font-bold opacity-40 mb-1">Clothing</p>
+                                <p id="clothingRec" class="text-sm">Loading advice...</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <i class="fas fa-mask opacity-40 mt-1"></i>
+                            <div>
+                                <p class="text-xs uppercase font-bold opacity-40 mb-1">Health & Air</p>
+                                <p id="aqiRec" class="text-sm">Loading advice...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grid Details -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="glass p-4">
+                        <p class="text-[10px] uppercase opacity-40 mb-1">Pressure</p>
+                        <p id="pressure" class="text-xl font-bold">-- hPa</p>
+                    </div>
+                    <div class="glass p-4">
+                        <p class="text-[10px] uppercase opacity-40 mb-1">UV Index</p>
+                        <p id="uv" class="text-xl font-bold">Medium</p>
+                    </div>
+                    <div class="glass p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas fa-sun text-yellow-500 text-lg"></i>
+                            <p class="text-[10px] uppercase opacity-40">Sunrise</p>
+                        </div>
+                        <p id="sunrise" class="font-bold text-lg">--</p>
+                    </div>
+                    <div class="glass p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas fa-moon text-indigo-400 text-lg"></i>
+                            <p class="text-[10px] uppercase opacity-40">Sunset</p>
+                        </div>
+                        <p id="sunset" class="font-bold text-lg">--</p>
+                    </div>
+                </div>
+
+                <!-- Lifestyle Tips -->
+                <div class="glass p-6 bg-yellow-500/10 border border-yellow-500/20">
+                    <h3 class="text-sm font-black uppercase text-yellow-500 mb-4">Lifestyle Tips</h3>
+                    <ul id="tipsList" class="space-y-3 text-sm"></ul>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        async function fetchWeather() {
-            const city = document.getElementById('cityInput').value;
-            if(!city) return;
+        const searchInput = document.getElementById('citySearch');
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const city = searchInput.value.trim();
+                if (city) updateWeather(city);
+            }
+        });
 
+        async function updateWeather(city = 'Mumbai') {
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('dashboard').classList.add('hidden');
             try {
                 const response = await fetch('/get_weather', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({city: city})
+                    body: JSON.stringify({city})
                 });
-                
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 if(data.error) throw new Error(data.error);
-
-                updateUI(data);
+                renderUI(data);
             } catch (err) {
-                console.error(err);
-                alert("Error: " + err.message);
+                console.error("Weather Update Error:", err.message);
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
             }
         }
 
-        function updateUI(data) {
-            document.getElementById('placeholder').classList.add('hidden');
-            document.getElementById('weatherContent').classList.remove('hidden');
-
-            // Text Updates
-            document.getElementById('cityName').innerText = data.city;
-            document.getElementById('mainTemp').innerText = data.temp + "°";
-            document.getElementById('weatherDesc').innerText = data.description;
-            document.getElementById('humidityVal').innerText = data.humidity + "%";
-            document.getElementById('visibilityVal').innerText = data.visibility + "km";
-            document.getElementById('windVal').innerText = data.wind_speed + " m/s";
-            document.getElementById('clothingText').innerText = data.clothing.join(', ');
-            document.getElementById('recommendationText').innerText = `"${data.recommendation}"`;
-
-            // Alert Logic
-            const statusAlert = document.getElementById('statusAlert');
-            const statusText = document.getElementById('statusText');
-            const statusIcon = document.getElementById('statusIcon');
-
-            if(data.temp > 35 || data.wind_speed > 15) {
-                statusAlert.className = 'alert-warning p-5 rounded-2xl flex items-center gap-4';
-                statusText.innerText = 'Extreme Conditions';
-                statusIcon.className = 'fas fa-exclamation-triangle text-red-500 text-2xl';
-            } else if (data.temp > 30 || data.wind_speed > 8) {
-                statusAlert.className = 'alert-caution p-5 rounded-2xl flex items-center gap-4';
-                statusText.innerText = 'Caution Advised';
-                statusIcon.className = 'fas fa-info-circle text-yellow-500 text-2xl';
-            } else {
-                statusAlert.className = 'alert-safe p-5 rounded-2xl flex items-center gap-4';
-                statusText.innerText = 'Safe & Pleasant';
-                statusIcon.className = 'fas fa-check-circle text-emerald-500 text-2xl';
-            }
-
-            applyVisualEffects(data.main_condition);
-        }
-
-        function applyVisualEffects(condition) {
-            const rainBox = document.getElementById('rain-container');
-            const snowBox = document.getElementById('snow-container');
-            const sunGlow = document.getElementById('sun-element');
+        function setTheme(condition) {
+            const body = document.body;
+            const overlay = document.getElementById('weather-overlay');
+            overlay.innerHTML = '';
+            body.className = 'p-4 md:p-8';
             
-            // Reset
-            rainBox.innerHTML = '';
-            snowBox.innerHTML = '';
-            sunGlow.style.display = 'none';
-            document.body.style.background = '#1a202c';
-
-            if(condition.includes('rain')) {
-                document.body.style.background = 'linear-gradient(to bottom, #203a43, #2c5364)';
-                for(let i=0; i<100; i++) {
-                    let drop = document.createElement('div');
-                    drop.className = 'drop';
+            const cond = condition.toLowerCase();
+            if (cond.includes('clear')) {
+                body.classList.add('theme-clear');
+            } else if (cond.includes('cloud')) {
+                body.classList.add('theme-clouds');
+            } else if (cond.includes('rain') || cond.includes('drizzle')) {
+                body.classList.add('theme-rain');
+                for(let i=0; i<50; i++) {
+                    const drop = document.createElement('div');
+                    drop.className = 'rain-drop';
                     drop.style.left = Math.random() * 100 + 'vw';
                     drop.style.animationDuration = (Math.random() * 0.5 + 0.5) + 's';
                     drop.style.animationDelay = Math.random() * 2 + 's';
-                    rainBox.appendChild(drop);
+                    overlay.appendChild(drop);
                 }
-            } else if(condition.includes('snow')) {
-                document.body.style.background = 'linear-gradient(to bottom, #83a4d4, #b6fbff)';
-                for(let i=0; i<50; i++) {
-                    let flake = document.createElement('i');
-                    flake.className = 'fas fa-snowflake snowflake';
-                    flake.style.left = Math.random() * 100 + 'vw';
-                    flake.style.fontSize = (Math.random() * 10 + 10) + 'px';
-                    flake.style.animationDuration = (Math.random() * 3 + 2) + 's';
-                    flake.style.opacity = Math.random();
-                    snowBox.appendChild(flake);
-                }
-            } else if(condition.includes('clear') || condition.includes('sun')) {
-                document.body.style.background = 'linear-gradient(to bottom, #2980b9, #6dd5fa, #ffffff)';
-                sunGlow.style.display = 'block';
+            } else if (cond.includes('snow')) {
+                body.classList.add('theme-snow');
+            } else if (cond.includes('thunder')) {
+                body.classList.add('theme-thunder');
+                const flash = document.createElement('div');
+                flash.className = 'flash w-full h-full';
+                overlay.appendChild(flash);
             } else {
-                document.body.style.background = 'linear-gradient(to bottom, #3e5151, #decba4)';
+                body.classList.add('theme-clouds');
             }
         }
+
+        function getClothingAdvice(temp) {
+            if (temp >= 30) return "Wear lightweight cotton or linen. Short sleeves and sunglasses recommended.";
+            if (temp >= 20) return "Comfortable cotton clothes. A light T-shirt or summer dress is perfect.";
+            if (temp >= 15) return "Light layering needed. A denim jacket or a light sweater over your shirt.";
+            if (temp >= 5) return "Wear a coat or jacket. A scarf might be needed if it's windy.";
+            return "Heavy winter gear: Thermal layers, a thick puffer coat, gloves, and a beanie.";
+        }
+
+        function getAQIAdvice(aqi) {
+            const advice = {
+                1: "Air is clean. Perfect for outdoor activities.",
+                2: "Air quality is acceptable. Fair for most.",
+                3: "Sensitive groups should reduce outdoor exercise.",
+                4: "Unhealthy. Wear a mask if outside.",
+                5: "Hazardous. Stay indoors with air purifiers."
+            };
+            return advice[aqi] || "Air quality data currently unavailable.";
+        }
+
+        function renderUI(data) {
+            setTheme(data.current.main);
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('cityName').innerText = data.city;
+            document.getElementById('currDate').innerText = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+            document.getElementById('mainTemp').innerText = data.current.temp + "°";
+            document.getElementById('feelsLike').innerText = data.current.feels_like;
+            document.getElementById('mainDesc').innerText = data.current.desc;
+            document.getElementById('mainIcon').src = `https://openweathermap.org/img/wn/${data.current.icon}@4x.png`;
+            
+            document.getElementById('pressure').innerText = data.current.pressure + " hPa";
+            document.getElementById('sunrise').innerText = data.current.sunrise;
+            document.getElementById('sunset').innerText = data.current.sunset;
+            document.getElementById('uv').innerText = data.current.uv_index || "Moderate";
+            
+            const aqiCard = document.getElementById('aqiCard');
+            document.getElementById('aqiLabel').innerText = data.aqi.label;
+            document.getElementById('aqiVal').innerText = data.aqi.val;
+            const aqiColors = ['#22c55e', '#eab308', '#f97316', '#ef4444', '#7f1d1d'];
+            aqiCard.style.borderLeftColor = aqiColors[data.aqi.val - 1] || '#22c55e';
+
+            document.getElementById('clothingRec').innerText = getClothingAdvice(data.current.temp);
+            document.getElementById('aqiRec').innerText = getAQIAdvice(data.aqi.val);
+
+            const hList = document.getElementById('hourlyList');
+            hList.innerHTML = data.hourly.map(h => `
+                <div class="glass min-w-[100px] p-4 text-center">
+                    <p class="text-xs opacity-50 mb-2">${h.time}</p>
+                    <img src="https://openweathermap.org/img/wn/${h.icon}.png" class="mx-auto w-10 h-10">
+                    <p class="font-bold text-lg">${h.temp}°</p>
+                </div>
+            `).join('');
+
+            const dList = document.getElementById('dailyList');
+            dList.innerHTML = data.daily.map(d => `
+                <div class="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+                    <span class="w-12 font-medium">${d.day}</span>
+                    <div class="flex items-center gap-2">
+                        <img src="https://openweathermap.org/img/wn/${d.icon}.png" class="w-8 h-8">
+                        <span class="text-sm opacity-60 capitalize">${d.desc}</span>
+                    </div>
+                    <span class="font-bold">${d.temp}°</span>
+                </div>
+            `).join('');
+
+            const tList = document.getElementById('tipsList');
+            tList.innerHTML = (data.tips || []).map(t => `
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-yellow-500 mt-1"></i>
+                    <span>${t}</span>
+                </li>
+            `).join('');
+        }
+
+        window.onload = () => updateWeather('Mumbai');
     </script>
 </body>
 </html>
