@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyCast - Immersive Weather</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-color: #1a202c;
+            --accent-color: #3182ce;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            font-family: 'Inter', sans-serif;
+            transition: background 1s ease;
+            min-height: 100vh;
+        }
+
+        .weather-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
+        }
+
+        /* Animation Styles */
+        .drop {
+            background: rgba(255, 255, 255, 0.4);
+            width: 2px;
+            height: 15px;
+            position: absolute;
+            bottom: 200px;
+            animation: fall linear infinite;
+        }
+
+        .snowflake {
+            color: #fff;
+            position: absolute;
+            top: -10px;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            to { transform: translateY(105vh); }
+        }
+
+        .sun-glow {
+            position: absolute;
+            top: -100px;
+            right: -100px;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(255, 223, 0, 0.4) 0%, rgba(255, 223, 0, 0) 70%);
+            border-radius: 50%;
+            filter: blur(40px);
+            display: none;
+        }
+
+        /* Alert Colors */
+        .alert-safe { border-left: 6px solid #10b981; background: rgba(16, 185, 129, 0.1); }
+        .alert-caution { border-left: 6px solid #f59e0b; background: rgba(245, 158, 11, 0.1); }
+        .alert-warning { border-left: 6px solid #ef4444; background: rgba(239, 68, 68, 0.1); }
+    </style>
+</head>
+<body class="bg-slate-900 text-white flex items-center justify-center p-4">
+
+    <!-- Dynamic Weather Background Elements -->
+    <div id="rain-container" class="weather-canvas"></div>
+    <div id="snow-container" class="weather-canvas"></div>
+    <div id="sun-element" class="sun-glow"></div>
+
+    <div class="max-w-4xl w-full">
+        <!-- Search Header -->
+        <div class="flex flex-col md:flex-row gap-4 mb-8">
+            <div class="relative flex-grow">
+                <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input type="text" id="cityInput" placeholder="Enter city name..." 
+                    class="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-lg">
+            </div>
+            <button onclick="fetchWeather()" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold transition-all shadow-lg shadow-blue-900/20">
+                Get Forecast
+            </button>
+        </div>
+
+        <div id="weatherContent" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Main Info Card -->
+            <div class="md:col-span-2 glass-card p-8 relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h1 id="cityName" class="text-5xl font-black tracking-tight mb-2">London</h1>
+                        <p id="weatherDesc" class="text-xl text-gray-300 capitalize">Scattered Clouds</p>
+                    </div>
+                    <div class="text-right">
+                        <span id="mainTemp" class="text-7xl font-light">22°</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4 mt-12 border-t border-white/10 pt-8">
+                    <div class="text-center">
+                        <p class="text-gray-400 text-xs uppercase mb-1">Humidity</p>
+                        <p id="humidityVal" class="text-xl font-bold">65%</p>
+                    </div>
+                    <div class="text-center border-x border-white/10">
+                        <p class="text-gray-400 text-xs uppercase mb-1">Visibility</p>
+                        <p id="visibilityVal" class="text-xl font-bold">10km</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-gray-400 text-xs uppercase mb-1">Wind Speed</p>
+                        <p id="windVal" class="text-xl font-bold">4.2 m/s</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Suggestions Sidebar -->
+            <div class="flex flex-col gap-6">
+                <!-- Status Alert Box -->
+                <div id="statusAlert" class="alert-safe p-5 rounded-2xl flex items-center gap-4 transition-all">
+                    <i id="statusIcon" class="fas fa-check-circle text-2xl"></i>
+                    <div>
+                        <p class="text-xs uppercase font-bold text-gray-300">Safety Status</p>
+                        <p id="statusText" class="text-sm font-semibold">Pleasant Conditions</p>
+                    </div>
+                </div>
+
+                <!-- Clothing Suggestion -->
+                <div class="glass-card p-6">
+                    <h3 class="text-sm font-bold uppercase text-gray-400 mb-4 flex items-center gap-2">
+                        <i class="fas fa-tshirt"></i> What to Wear
+                    </h3>
+                    <p id="clothingText" class="text-lg leading-relaxed">Comfortable casual wear 👖</p>
+                </div>
+
+                <!-- Advice Card -->
+                <div class="glass-card p-6">
+                    <h3 class="text-sm font-bold uppercase text-gray-400 mb-4 flex items-center gap-2">
+                        <i class="fas fa-lightbulb"></i> Daily Tip
+                    </h3>
+                    <p id="recommendationText" class="text-sm italic text-blue-100">"Great weather for outdoor activities!"</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Initial Placeholder -->
+        <div id="placeholder" class="text-center py-20 opacity-50">
+            <i class="fas fa-cloud-sun text-8xl mb-6"></i>
+            <h2 class="text-2xl">Enter a city to see the magic</h2>
+        </div>
+    </div>
+
+    <script>
+        async function fetchWeather() {
+            const city = document.getElementById('cityInput').value;
+            if(!city) return;
+
+            try {
+                const response = await fetch('/get_weather', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({city: city})
+                });
+                
+                const data = await response.json();
+                if(data.error) throw new Error(data.error);
+
+                updateUI(data);
+            } catch (err) {
+                console.error(err);
+                alert("Error: " + err.message);
+            }
+        }
+
+        function updateUI(data) {
+            document.getElementById('placeholder').classList.add('hidden');
+            document.getElementById('weatherContent').classList.remove('hidden');
+
+            // Text Updates
+            document.getElementById('cityName').innerText = data.city;
+            document.getElementById('mainTemp').innerText = data.temp + "°";
+            document.getElementById('weatherDesc').innerText = data.description;
+            document.getElementById('humidityVal').innerText = data.humidity + "%";
+            document.getElementById('visibilityVal').innerText = data.visibility + "km";
+            document.getElementById('windVal').innerText = data.wind_speed + " m/s";
+            document.getElementById('clothingText').innerText = data.clothing.join(', ');
+            document.getElementById('recommendationText').innerText = `"${data.recommendation}"`;
+
+            // Alert Logic
+            const statusAlert = document.getElementById('statusAlert');
+            const statusText = document.getElementById('statusText');
+            const statusIcon = document.getElementById('statusIcon');
+
+            if(data.temp > 35 || data.wind_speed > 15) {
+                statusAlert.className = 'alert-warning p-5 rounded-2xl flex items-center gap-4';
+                statusText.innerText = 'Extreme Conditions';
+                statusIcon.className = 'fas fa-exclamation-triangle text-red-500 text-2xl';
+            } else if (data.temp > 30 || data.wind_speed > 8) {
+                statusAlert.className = 'alert-caution p-5 rounded-2xl flex items-center gap-4';
+                statusText.innerText = 'Caution Advised';
+                statusIcon.className = 'fas fa-info-circle text-yellow-500 text-2xl';
+            } else {
+                statusAlert.className = 'alert-safe p-5 rounded-2xl flex items-center gap-4';
+                statusText.innerText = 'Safe & Pleasant';
+                statusIcon.className = 'fas fa-check-circle text-emerald-500 text-2xl';
+            }
+
+            applyVisualEffects(data.main_condition);
+        }
+
+        function applyVisualEffects(condition) {
+            const rainBox = document.getElementById('rain-container');
+            const snowBox = document.getElementById('snow-container');
+            const sunGlow = document.getElementById('sun-element');
+            
+            // Reset
+            rainBox.innerHTML = '';
+            snowBox.innerHTML = '';
+            sunGlow.style.display = 'none';
+            document.body.style.background = '#1a202c';
+
+            if(condition.includes('rain')) {
+                document.body.style.background = 'linear-gradient(to bottom, #203a43, #2c5364)';
+                for(let i=0; i<100; i++) {
+                    let drop = document.createElement('div');
+                    drop.className = 'drop';
+                    drop.style.left = Math.random() * 100 + 'vw';
+                    drop.style.animationDuration = (Math.random() * 0.5 + 0.5) + 's';
+                    drop.style.animationDelay = Math.random() * 2 + 's';
+                    rainBox.appendChild(drop);
+                }
+            } else if(condition.includes('snow')) {
+                document.body.style.background = 'linear-gradient(to bottom, #83a4d4, #b6fbff)';
+                for(let i=0; i<50; i++) {
+                    let flake = document.createElement('i');
+                    flake.className = 'fas fa-snowflake snowflake';
+                    flake.style.left = Math.random() * 100 + 'vw';
+                    flake.style.fontSize = (Math.random() * 10 + 10) + 'px';
+                    flake.style.animationDuration = (Math.random() * 3 + 2) + 's';
+                    flake.style.opacity = Math.random();
+                    snowBox.appendChild(flake);
+                }
+            } else if(condition.includes('clear') || condition.includes('sun')) {
+                document.body.style.background = 'linear-gradient(to bottom, #2980b9, #6dd5fa, #ffffff)';
+                sunGlow.style.display = 'block';
+            } else {
+                document.body.style.background = 'linear-gradient(to bottom, #3e5151, #decba4)';
+            }
+        }
+    </script>
+</body>
+</html>
