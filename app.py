@@ -1,11 +1,38 @@
 from flask import Flask, render_template, request, jsonify
 import requests
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Note: In a production environment, use environment variables for API keys
-# Empty string as requested for potential environment injection
+# Replace with your actual OpenWeatherMap API Key
 API_KEY = "49cc2657045897a77135f364263fe308" 
+
+def get_lifestyle_tips(data, aqi):
+    temp = data['main']['temp']
+    condition = data['weather'][0]['main'].lower()
+    humidity = data['main']['humidity']
+    
+    tips = []
+    # Temperature based
+    if temp > 32:
+        tips.append("Stay hydrated! Drink at least 3L of water today 🥤")
+    elif temp < 15:
+        tips.append("Keep yourself warm with hot beverages ☕")
+    
+    # Air Quality based
+    if aqi >= 4:
+        tips.append("Air quality is poor. Wear a mask outdoors 😷")
+    
+    # Humidity/Rain based
+    if 'rain' in condition:
+        tips.append("High humidity. Use antifungal powder if needed 🧴")
+    elif humidity < 30:
+        tips.append("Air is dry. Use a good moisturizer 🧴")
+        
+    if 'clear' in condition:
+        tips.append("Perfect for outdoor exercise or a park visit 🏃‍♂️")
+        
+    return tips
 
 @app.route('/')
 def index():
@@ -13,68 +40,70 @@ def index():
 
 @app.route('/get_weather', methods=['POST'])
 def get_weather():
-    city = request.json.get('city')
-    if not city:
-        return jsonify({"error": "City name is required"}), 400
-
-    # Step 1: Get coordinates for the city (Geocoding)
-    geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}"
+    city = request.json.get('city', 'Mumbai') # Default to Mumbai
     
     try:
-        geo_resp = requests.get(geo_url)
-        geo_data = geo_resp.json()
+        # 1. Geocoding
+        geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}"
+        geo_data = requests.get(geo_url).json()
+        if not geo_data: return jsonify({"error": "City not found"}), 404
         
-        if not geo_data:
-            return jsonify({"error": "City not found"}), 404
-        
-        lat = geo_data[0]['lat']
-        lon = geo_data[0]['lon']
-        city_name = geo_data[0]['name']
+        lat, lon = geo_data[0]['lat'], geo_data[0]['lon']
+        city_full_name = f"{geo_data[0]['name']}, {geo_data[0].get('country', '')}"
 
-        # Step 2: Get detailed weather data using One Call API (or standard if One Call isn't active)
-        # Using current weather + forecast for maximum features
-        weather_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
-        data = requests.get(weather_url).json()
+        # 2. Current Weather
+        current_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+        curr = requests.get(current_url).json()
 
-        # Add logic for clothing and recommendations on the backend
-        temp = data['main']['temp']
-        condition = data['weather'][0]['main'].lower()
-        
-        clothing = []
-        recommendation = ""
-        
-        # Clothing Logic
-        if temp >= 30:
-            clothing.append("Wear light cotton clothes 👕")
-            recommendation = "Stay hydrated and avoid direct sun."
-        elif 20 <= temp < 30:
-            clothing.append("Comfortable casual wear 👖")
-            recommendation = "Great weather for outdoor activities!"
-        elif 10 <= temp < 20:
-            clothing.append("Wear a light jacket 🧥")
-            recommendation = "A bit chilly, keep a layer handy."
-        else:
-            clothing.append("Wear warm clothes and jacket 🧣")
-            recommendation = "Freezing temperatures! Bundle up."
+        # 3. Forecast (5 Days / 3 Hours)
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+        fore = requests.get(forecast_url).json()
 
-        if 'rain' in condition:
-            recommendation = "Don't forget to carry an umbrella! ☔"
-        elif 'snow' in condition:
-            recommendation = "Be careful, roads might be slippery! ❄️"
+        # 4. Air Quality
+        air_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+        air = requests.get(air_url).json()
 
-        # Constructing the final response
+        # Process Forecasts
+        hourly = []
+        for item in fore['list'][:8]: # Next 24 hours (3-hour steps)
+            hourly.append({
+                "time": datetime.fromtimestamp(item['dt']).strftime('%I %p'),
+                "temp": round(item['main']['temp']),
+                "icon": item['weather'][0]['icon']
+            })
+
+        daily = []
+        # Extract one forecast per day (approx noon)
+        for i in range(0, len(fore['list']), 8):
+            item = fore['list'][i]
+            daily.append({
+                "day": datetime.fromtimestamp(item['dt']).strftime('%a'),
+                "temp": round(item['main']['temp']),
+                "desc": item['weather'][0]['main'],
+                "icon": item['weather'][0]['icon']
+            })
+
+        aqi_val = air['list'][0]['main']['aqi']
+        aqi_label = ["Good", "Fair", "Moderate", "Poor", "Very Poor"][aqi_val-1]
+
         result = {
-            "city": city_name,
-            "temp": round(temp),
-            "feels_like": round(data['main']['feels_like']),
-            "humidity": data['main']['humidity'],
-            "visibility": data.get('visibility', 0) / 1000, # km
-            "wind_speed": data['wind']['speed'],
-            "description": data['weather'][0]['description'],
-            "main_condition": condition,
-            "clothing": clothing,
-            "recommendation": recommendation,
-            "icon": data['weather'][0]['icon']
+            "city": city_full_name,
+            "current": {
+                "temp": round(curr['main']['temp']),
+                "feels_like": round(curr['main']['feels_like']),
+                "humidity": curr['main']['humidity'],
+                "pressure": curr['main']['pressure'],
+                "wind": curr['wind']['speed'],
+                "desc": curr['weather'][0]['description'],
+                "main": curr['weather'][0]['main'],
+                "icon": curr['weather'][0]['icon'],
+                "sunrise": datetime.fromtimestamp(curr['sys']['sunrise']).strftime('%I:%M %p'),
+                "sunset": datetime.fromtimestamp(curr['sys']['sunset']).strftime('%I:%M %p'),
+            },
+            "aqi": {"val": aqi_val, "label": aqi_label},
+            "hourly": hourly,
+            "daily": daily,
+            "tips": get_lifestyle_tips(curr, aqi_val)
         }
 
         return jsonify(result)
